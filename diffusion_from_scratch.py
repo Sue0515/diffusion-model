@@ -70,3 +70,25 @@ axs[1].imshow(torchvision.utils.make_grid(noised_img)[0].clip(0, 1), cmap='Greys
 axs[2].set_title('Prediction')
 axs[2].imshow(torchvision.utils.make_grid(pred)[0].clip(0, 1), cmap='Greys')
 plt.show() 
+
+# sampling
+n_steps = 5
+X = torch.rand(8, 1, 28, 28).to(device)
+step_hist = [X.detach().cpu()]
+prediction_hist = []
+
+for i in range(n_steps):
+    with torch.no_grad():
+        prediction = net(X)
+    prediction_hist.append(prediction.detach().cpu())
+    factor = 1/(n_steps-i) # How much we move toward the prediction 
+    X = X*(1-factor) + prediction*factor # prediction 을 받아서 닫시 sampling 
+    step_hist.append(X.detach().cpu())
+
+fig, axs = plt.subplots(n_steps, 2, figsize=(9, 4), sharex=True)
+axs[0,0].set_title('Model Input')
+axs[0,1].set_title('model prediction')
+
+for i in range(n_steps):
+    axs[i, 0].imshow(torchvision.utils.make_grid(step_hist[i])[0].clip(0, 1), cmap='Greys')
+    axs[i, 1].imshow(torchvision.utils.make_grid(prediction_hist[i])[0].clip(0, 1), cmap='Greys')

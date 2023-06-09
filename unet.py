@@ -38,5 +38,7 @@ class BasicUNet(nn.Module):
     
 
 net = BasicUNet() 
-x = torch.rand(8, 1, 28, 28).double() 
+x = torch.rand(8, 1, 28, 28)
 net(x.shape)
+
+sum([p.numel() for p in net.parameters()]) # num of parameters 

@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torchvision
+import open_clip
 from PIL import Image
 from torch import nn
 from torch.nn import functional as F
@@ -9,6 +10,13 @@ from diffusers import DDPMScheduler, DDIMScheduler, DDPMPipeline
 from matplotlib import pyplot as plt
 from tqdm.auto import tqdm
 
+device = ('cuda' if torch.cuda.is_available() else 'cpu')
+
+clip_model, _, preprocess = open_clip.create_model_and_transforms(
+    'ViT-B-32', pretrained='openai'
+)
+clip_model.to(device)
+
 def hue_loss(img, tgt_hue):
     target = (torch.tensor(tgt_hue)).to(img.device) * 2 -1 # map to (-1, 1)
     target = target[None, :, None, None]
@@ -16,8 +24,16 @@ def hue_loss(img, tgt_hue):
 
     return err 
 
+def clip_loss(img, text):
+    img_feat = clip_model.encode_image(transformations(img))
+    input_normed = torch.nn.functional.normalize(img_feat.unsqueeze(1), dim=2)
+    embed_normed = torch.nn.functional.normalize(text.unsqueeze(0), dim=2)
+    sgcd = (input_normed.sub(embed_normed).norm(dim=2).div(2).arcsin().pow(2).mul(2))  # Squared Great Circle Distance
+    
+    return sgcd.mean() 
+ 
 pipeline_name = "johnowhitaker/sd-class-wikiart-from-bedrooms"
-device = ('cuda' if torch.cuda.is_available() else 'cpu')
+
 image_pipe = DDPMPipeline.from_pretrained(pipeline_name).to(device)
 scheduler = DDIMScheduler.from_pretrained(pipeline_name)
 scheduler.set_timesteps(num_inference_steps=40)

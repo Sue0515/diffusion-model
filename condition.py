@@ -29,7 +29,7 @@ for epoch in range(n_epochs):
     for img, label in tqdm(train_dataloader):
         img = img.to(device)*2-1 # Data on the GPU (mapped to (-1, 1))
         label = label.to(device)
-        noise = torch.randn_like(X)
+        noise = torch.randn_like(img)
         timesteps = torch.randint(0, 999, (img.shape[0],)).long().to(device)
         noisy_img = noise_scheduler.add_noise(img, noise, timesteps)
 

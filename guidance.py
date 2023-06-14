@@ -37,14 +37,14 @@ pipeline_name = "johnowhitaker/sd-class-wikiart-from-bedrooms"
 image_pipe = DDPMPipeline.from_pretrained(pipeline_name).to(device)
 scheduler = DDIMScheduler.from_pretrained(pipeline_name)
 scheduler.set_timesteps(num_inference_steps=40)
-guidance_loss_scale = 1 # determines the strength of the effect 
+guidance_loss_scale = 100 # determines the strength of the effect 
 noise = torch.randn(8, 3, 256, 256).to(device)
 
 for idx, t in tqdm(enumerate(scheduler.timesteps)):
     input = scheduler.scale_model_input(noise, t)
 
     with torch.no_grad(): 
-        noise_pred = image_pipe.unet(input, t)['sample'] # predict without grad
+        noise_pred = image_pipe.unet(input, t)['sample'] # predict without grad, predict noise residual 
     
     noise = noise.detach().requires_grad_() 
     img_0 = scheduler.step(noise_pred, t, noise).pred_original_sample 
@@ -56,6 +56,43 @@ for idx, t in tqdm(enumerate(scheduler.timesteps)):
     noise = scheduler.step(noise_pred, t, noise).prev_sample 
 
 grid = torchvision.utils.make_grid(noise, nrow=4)
+image = grid.permute(1, 2, 0).cpu().clip(-1, 1)*0.5+0.5
+Image.fromarray(np.array(image*255).astype(np.uint8))
+
+####### CLIP Guidance 
+prompt = 'A Painting of Purple Tulip'
+text = open_clip.tokenize([prompt]).to(device)
+guidance_loss_scale = 8 
+n_cuts = 4 
+scheduler.set_timesteps(50) # more steps, more time for the guidance to be effective 
+
+with torch.no_grad(), torch.cuda.amp.autocast():
+    text_feat = clip_model.encode_text(text)
+
+noise = torch.randn(4, 3 ,256, 256).to(device)
+
+for idx, t in tqdm(enumerate(scheduler.timesteps)):
+    model_input = scheduler.scale_model_input(noise, t)
+
+    with torch.no_grad():
+        noise_pred = image_pipe.unet(model_input, t)['sample']
+    
+    cond_grad = 0 
+
+    for cut in (n_cuts): # compare between hue guidance 
+        noise = noise.detach().requires_grad_() 
+        img_0 = scheduler.step(noise_pred, t, noise).pred_original_sample 
+        loss = clip_loss(img_0, text_feat)*guidance_loss_scale
+        cond_grad -= torch.autograd.grad(loss, noise)[0] / n_cuts 
+    
+    if idx % 10 == 0:
+        print(f'Step: {idx} | Guidance Loss: {loss.item()}')
+    
+    alpha_bar = scheduler.alphas_cumprod[idx]
+    noise = noise.detach() + cond_grad*alpha_bar.sqrt() 
+    noise = scheduler.step(noise_pred, t, noise).prev_sample 
+
+grid = torchvision.utils.make_grid(noise.detach(), nrow=4)
 image = grid.permute(1, 2, 0).cpu().clip(-1, 1)*0.5+0.5
 Image.fromarray(np.array(image*255).astype(np.uint8))
 
